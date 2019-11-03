@@ -1,0 +1,103 @@
+<h1>Genesis</h1>
+<p>
+  This app is a fun exploration about recent version updates for a interview puzzler presented by Even Financial:
+</p>
+<div class="card">
+  <div markdown class="card-body">
+Write a program that takes input from stdin with the following properties:
+- Input is split into lines delimited by newline characters.
+- Every line has the same length.
+- Every line consists of an arbitrary sequence of hyphens ("-") and asterisks ("\*").
+- The final line of input is terminated by a newline character.
+
+In this challenge, each character in the input will have coordinates defined by `(line number, character number)`,
+starting at the top and left. So the first character on the first line will have the coordinates `(1,1)` and the
+fifth
+character on line 3 will have the coordinates `(3,5)`.
+
+The program should find a box (or boxes) in the input with the following properties:
+- The box must be defined by two pairs of coordinates corresponding to its top left and bottom right corners.
+- It must be the **minimum bounding box** for some contiguous group of asterisks, with each asterisk being
+horizontally or vertically (but not diagonally) adjacent to at least one other asterisk in the group. The box should
+not _strictly_ bound the group, so the coordinates for the box in the following input should be `(2,2)(3,3)` not
+`(1,1)(4,4)`
+
+```
+----
+-**-
+-**-
+----
+```
+
+- It should not overlap (i.e. share any characters with) any other minimum bounding boxes.
+- Of all the non-overlapping, minimum bounding boxes in the input, _it should be the largest_.
+
+If any boxes satisfying the conditions can be found in the input, the program should return an exit code of 0 and,
+for
+each box, print a line to stdout with the two pairs of coordinates.
+
+So, given the file “groups.txt” with the following content:
+
+```
+**-------***
+-*--**--***-
+-----***--**
+-------***--
+```
+
+Running your program with this input would look something like this:
+
+```
+> cat groups.txt | bounding-box
+(1,1)(2,2)
+```
+
+This is because the larger groups on the right of the input have overlapping bounding boxes, so the returned
+coordinates bound the smaller group on the top left.
+  </div></div>
+
+<h1>Evolution</h1>
+
+<p>The app evolved over about four generations:</p>
+<ul>
+  <li>The first generation was simply to prototype the puzzler with no real emphasis on final code. Focus was on SOC and
+    clean code and passing IO streams for rendering.
+  </li>
+  <ul>
+    <li>A sub-branch was tried k-d trees to see if they made sense and aborted. The effort reinforced the original idea
+      of a tree of objects though.
+    </li>
+  </ul>
+  <li>The second generation was adding Akka Streams. This did not take a lot of time, the existing reader was turned
+    into an Akka Stream <code>Source</code>, the processing logic moved to a <code>Flow</code>, and the rendering logic
+    moved to a <code>Sink</code>. The processing <code>Flow</code> was augmented to take internal <code>Command</code>s,
+    designed so that the <code>Flow</code> could emit output on request instead
+    of only when the <code>Source</code> completed. In the case where the application is run to the original
+    specification with no arguments, the
+    output of the <code>Source</code> is mapped to <code>AddPoint</code> commands, with a single <code>Emit</code>
+    object to generate the final output.
+  </li>
+  <li>The third generation added <code>scopt</code> for arguments processing such that the application could include an
+    Angular 8 UI using Bootstrap. Running the application with the <code>-i</code> argument starts a web server on port XXXX.
+    The web server is built with Akka HTTP, providing URI paths for the Angular SPA. The app itself uses many features of
+    Angular, including routing and a markdown plugin for the rendering of the previous section of this page.
+  </li>
+</ul>
+<h1>Results</h1>
+<p>The application provides the desired output with the limited test cases that were provided. It has not been extensively
+tested, although unit tests are provided for coverage of the application flows.</p>
+<p>This could have been done a lot faster except for the start of winter and the goals of making an inspired piece of work. The first generation
+  took far more experimentation than I thought it would, successive versions started getting fun and carried away.</p>
+<p>For his part, Old Man Winter is a real challenge in Colorado and I've had a six-person hot tub taking up space in the garage all summer.
+It was basically what inspired the start of my first ever sabbatical where I just did what I wanted instead of worrying about code output. It feels
+great to get back into the mode here, but I did have to make sure the tub went in before the deep of winter started. Crane comes in 36 hours to drop it in!</p>
+<h1>Potential Improvements</h1>
+<p>The UI demonstrates the power of commands with streams. The user can add points and trigger a new processing run. Improvements could include:</p>
+<ul>
+  <li>The ability to remove the 1:1 relationship in the UI between adding points and generating output</li>
+  <li>Loading from files</li>
+  <li>Generate scrollable SVG graphics for the input data and results</li>
+  <li>Packaging as Docker with Kubernetes manifests</li>
+  <li>Integration to CI/CD</li>
+  <li>Boiling the oceans</li>
+</ul>
