@@ -9,7 +9,13 @@ lazy val slf4jVersion     = "1.6.4"
 lazy val npmVersion = taskKey[Unit]("Show npm version")
 lazy val ngInit     = taskKey[Unit]("Inits a new Angular application, using the ui folder")
 lazy val updateNpm  = taskKey[Unit]("Update npm")
+lazy val ngBuild    = taskKey[Unit]("Build webapp to local directory")
 lazy val npmTask    = inputKey[Unit]("Run npm with arguments")
+
+ngBuild := {
+    println("Building webapp")
+    haltOnCmdResultError(Process("ng build", baseDirectory.value / "ui").!)
+}
 
 lazy val commonSettings = Seq(
     organization := "briantopping",
@@ -19,6 +25,7 @@ lazy val commonSettings = Seq(
 )
 
 lazy val rootSettings = Seq(
+    mainClass in assembly := Some("boundingbox.Main"),
     npmVersion := {
         haltOnCmdResultError(Process("npm -version", baseDirectory.value / "ui").!)
     },
@@ -51,7 +58,7 @@ def haltOnCmdResultError(result: Int) {
 
 lazy val root = (project in file("."))
     .settings(rootSettings)
-    .aggregate(backend, ui)
+    .aggregate(ui, backend)
 
 lazy val backend = (project in file("backend"))
     .settings(
@@ -79,3 +86,7 @@ lazy val ui = (project in file("ui"))
         commonSettings,
         // other settings
     )
+
+((compile in Compile) in ui) := {
+    ((compile in Compile) in ui) dependsOn ngBuild
+    }.value

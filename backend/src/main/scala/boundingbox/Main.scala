@@ -8,8 +8,8 @@ import akka.http.scaladsl.model.StatusCodes.MovedPermanently
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
-import akka.stream.scaladsl.{Flow, GraphDSL, RunnableGraph, Sink, Source}
-import akka.stream.{ActorMaterializer, ClosedShape}
+import akka.stream.ActorMaterializer
+import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.{Done, NotUsed}
 
 import scala.concurrent.Future
@@ -35,16 +35,17 @@ object Main {
                 implicit val materializer = ActorMaterializer()
                 var binding: Future[Http.ServerBinding] = Future.failed(new IllegalStateException("No server ever started"))
 
-                val source = Reader.source(config.in).map[Command](AddPoint)
-                val mat    = if (config.interactive) {
-                    // FIXME need to generate a Sink here and pass it to both functions
-                    binding = startWeb()
-                    graph(source, ???)
+                val source    = Reader.source(config.in).map[Command](AddPoint)
+                val processor = new Processor()
+                (if (config.interactive) {
+                    // FIXME: WIP
+                    val sink: Sink[Rect, Future[Done]] = Sink.ignore
+//                    binding = startWeb(source, sink)
+                    source.concat(Source.single(Emit())).mapConcat(flowLogic(_, processor)).toMat(sink)(Keep.right)
                 } else {
                     val sink = Sink.foreach[Rect](r => println(s"(${r.topLeft.x}, ${r.topLeft.y})(${r.bottomRight.x}, ${r.bottomRight.y})"))
-                    graph(source.concat(Source.single(Emit())), sink)
-                }
-                mat.run().andThen {
+                    source.concat(Source.single(Emit())).mapConcat(flowLogic(_, processor)).toMat(sink)(Keep.right)
+                }).run().andThen {
                     case Success(_) =>
                         binding.flatMap(_.unbind())
                         system.terminate()
@@ -55,25 +56,17 @@ object Main {
         }
     }
 
-    private def graph(source: Source[Command, NotUsed], sink: Sink[Rect, Future[Done]]): RunnableGraph[Future[Done]] = {
-        RunnableGraph.fromGraph(GraphDSL.create(sink) {
-            implicit builder: GraphDSL.Builder[Future[Done]] =>
-                sink =>
-                    import akka.stream.scaladsl.GraphDSL.Implicits._
-                    val processor   = new Processor()
-
-                    source ~> Flow[Command].mapConcat {
-                        case AddPoint(p) =>
-                            processor.addPoint(p)
-                            Set.empty[Rect]
-                        case Emit()      =>
-                            processor.results()
-                    } ~> sink
-                    ClosedShape
-        })
+    private def flowLogic(command: Command, processor: Processor): Set[Rect] = {
+        command match {
+            case AddPoint(p) =>
+                processor.addPoint(p)
+                Set.empty[Rect]
+            case Emit()      =>
+                processor.results()
+        }
     }
 
-    private def startWeb()(implicit as: ActorSystem, mat: ActorMaterializer): Future[Http.ServerBinding] = {
+    private def startWeb(source: Source[Command, NotUsed], sink: Sink[Rect, NotUsed])(implicit as: ActorSystem, mat: ActorMaterializer): Future[Http.ServerBinding] = {
         val route: Route = {
             pathEndOrSingleSlash {
                 redirect("/index.html", MovedPermanently)
