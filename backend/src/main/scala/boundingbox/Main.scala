@@ -12,7 +12,8 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{BroadcastHub, Keep, RunnableGraph, Sink, Source}
 import akka.{Done, NotUsed}
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
+import scala.io.StdIn
 import scala.util.Success
 
 case class Config(interactive: Boolean = false, in: InputStream = System.in)
@@ -32,7 +33,7 @@ object Main {
                 implicit val ec           = system.dispatcher
                 implicit val materializer = ActorMaterializer()
 
-                val source    = Reader.source(config.in).map[Command](AddPoint)
+                val source    = Reader.source(config.in).map[Command](AddPoint).concat(Source.single(Emit()))
                 val processor = new Processor()
                 if (config.interactive) {
                     val sink: Sink[Rect, Source[Rect, NotUsed]] = BroadcastHub.sink
@@ -40,10 +41,9 @@ object Main {
                     startWeb(runnable)
                 } else {
                     val sink                  = Sink.foreach[Rect](r => println(s"(${r.topLeft.x}, ${r.topLeft.y})(${r.bottomRight.x}, ${r.bottomRight.y})"))
-                    val terminatedSource      = source.concat(Source.single(Emit()))
-                    terminatedSource.mapConcat(flowLogic(_, processor)).toMat(sink)(Keep.right).run()
-                }.andThen {
-                    case Success(_) => system.terminate()
+                    source.mapConcat(flowLogic(_, processor)).toMat(sink)(Keep.right).run().andThen {
+                        case Success(_) => system.terminate()
+                    }
                 }
 
             case None =>
@@ -61,7 +61,7 @@ object Main {
         }
     }
 
-    private def startWeb(runnable: RunnableGraph[Source[Rect, NotUsed]])(implicit as: ActorSystem, mat: ActorMaterializer): Future[Http.ServerBinding] = {
+    private def startWeb(runnable: RunnableGraph[Source[Rect, NotUsed]])(implicit as: ActorSystem, ec: ExecutionContext, mat: ActorMaterializer): Unit = {
         import GeometryJsonProtocol._
         implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
 
@@ -77,6 +77,9 @@ object Main {
             } ~ getFromResourceDirectory("webapp")
         }
 
-        Http().bindAndHandle(route, "0.0.0.0", 8080)
+        val binding = Http().bindAndHandle(route, "0.0.0.0", 8080)
+        println(s"Server online at http://localhost:8080/\nPress RETURN to stop...")
+        StdIn.readLine()
+        binding.flatMap(_.unbind()).onComplete(_ => as.terminate())
     }
 }
