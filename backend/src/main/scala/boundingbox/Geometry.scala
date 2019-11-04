@@ -1,6 +1,9 @@
 package boundingbox
 
-case class Point(x: Integer, y: Integer) {
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+import spray.json.DefaultJsonProtocol
+
+case class Point(x: Int, y: Int) {
     def contiguous(p: Point): Boolean =
         x - p.x == 0 && Math.abs(y - p.y) <= 1 ^ Math.abs(x - p.x) <= 1 && y - p.y == 0
 }
@@ -24,3 +27,8 @@ object Rect {
     def apply(p: Point): Rect = Rect(p, p)
 }
 
+object GeometryJsonProtocol extends akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+    with spray.json.DefaultJsonProtocol {
+    implicit val PointFormat = jsonFormat2(Point)
+    implicit val RectFormat  = jsonFormat2(Rect.apply)
+}
