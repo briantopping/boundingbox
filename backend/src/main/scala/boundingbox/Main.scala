@@ -2,6 +2,7 @@ package boundingbox
 
 import java.io.{File, FileInputStream, InputStream}
 
+import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
@@ -9,10 +10,10 @@ import akka.http.scaladsl.model.StatusCodes.MovedPermanently
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{BroadcastHub, Keep, RunnableGraph, Sink, Source}
-import akka.{Done, NotUsed}
+import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, MergeHub, Sink, Source}
+import akka.util.ByteString
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 import scala.io.StdIn
 import scala.util.Success
 
@@ -33,15 +34,15 @@ object Main {
                 implicit val ec           = system.dispatcher
                 implicit val materializer = ActorMaterializer()
 
-                val source    = Reader.source(config.in).map[Command](AddPoint).concat(Source.single(Emit()))
-                val processor = new Processor()
+                val fileSource = Reader.source(config.in).map[Command](AddPoint).concat(Source.single(Emit()))
+                val processor  = new Processor()
                 if (config.interactive) {
-                    val sink: Sink[Rect, Source[Rect, NotUsed]] = BroadcastHub.sink
-                    val runnable                                = source.mapConcat(flowLogic(_, processor)).toMat(sink)(Keep.right)
-                    startWeb(runnable)
+                    val (sink, source) = MergeHub.source.mapConcat(flowLogic(processor)).toMat(BroadcastHub.sink[Rect])(Keep.both).run()
+                    sink.runWith(fileSource)
+                    startWeb(sink, source)
                 } else {
-                    val sink                  = Sink.foreach[Rect](r => println(s"(${r.topLeft.x}, ${r.topLeft.y})(${r.bottomRight.x}, ${r.bottomRight.y})"))
-                    source.mapConcat(flowLogic(_, processor)).toMat(sink)(Keep.right).run().andThen {
+                    val sink = Sink.foreach[Rect](r => println(s"(${r.topLeft.x}, ${r.topLeft.y})(${r.bottomRight.x}, ${r.bottomRight.y})"))
+                    fileSource.mapConcat(flowLogic(processor)).toMat(sink)(Keep.right).run().andThen {
                         case Success(_) => system.terminate()
                     }
                 }
@@ -51,7 +52,7 @@ object Main {
         }
     }
 
-    private def flowLogic(command: Command, processor: Processor): Set[Rect] = {
+    private def flowLogic(processor: Processor)(command: Command): Set[Rect] = {
         command match {
             case AddPoint(p) =>
                 processor.addPoint(p)
@@ -61,9 +62,9 @@ object Main {
         }
     }
 
-    private def startWeb(runnable: RunnableGraph[Source[Rect, NotUsed]])(implicit as: ActorSystem, ec: ExecutionContext, mat: ActorMaterializer): Unit = {
-        import GeometryJsonProtocol._
+    private def startWeb(sink: Sink[Command, NotUsed], source: Source[Rect, NotUsed])(implicit system: ActorSystem, ec: ExecutionContext, mat: ActorMaterializer): Unit = {
         implicit val jsonStreamingSupport: JsonEntityStreamingSupport = EntityStreamingSupport.json()
+            .withFramingRenderer(Flow[ByteString].map(bs => bs ++ ByteString("\n")))
 
         val route: Route = {
             pathEndOrSingleSlash {
@@ -71,15 +72,24 @@ object Main {
             } ~ pathPrefix("api") {
                 path("rects") {
                     get {
-                        complete(runnable.run())
+                        import GeometryJsonProtocol._
+                        complete(source)
+                    }
+                } ~ pathPrefix("command") {
+                    post {
+                        import CommandJsonProtocol._
+                        entity(as[Command]) { command =>
+                            Source.single(command).runWith(sink)
+                            complete("accepted")
+                        }
                     }
                 }
             } ~ getFromResourceDirectory("webapp")
         }
 
         val binding = Http().bindAndHandle(route, "0.0.0.0", 8080)
-        println(s"Server online at http://localhost:8080/\nPress RETURN to stop...")
+        println("Server online at http://localhost:8080/\nPress RETURN to stop...")
         StdIn.readLine()
-        binding.flatMap(_.unbind()).onComplete(_ => as.terminate())
+        binding.flatMap(_.unbind()).onComplete(_ => system.terminate())
     }
 }
