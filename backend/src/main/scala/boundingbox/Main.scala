@@ -1,6 +1,6 @@
 package boundingbox
 
-import java.io.{File, FileInputStream, InputStream}
+import java.io.{BufferedReader, File, FileInputStream, InputStream, InputStreamReader}
 
 import akka.NotUsed
 import akka.actor.ActorSystem
@@ -34,7 +34,7 @@ object Main {
                 implicit val ec           = system.dispatcher
                 implicit val materializer = ActorMaterializer()
 
-                val fileSource = Reader.source(config.in).map[Command](AddPoint).concat(Source.single(Emit()))
+                val fileSource = Reader.source(new BufferedReader(new InputStreamReader(config.in))).map[Command](AddPoint).concat(Source.single(Emit()))
                 val processor  = new Processor()
                 if (config.interactive) {
                     val (sink, source) = MergeHub.source.mapConcat(flowLogic(processor)).toMat(BroadcastHub.sink[Rect])(Keep.both).run()

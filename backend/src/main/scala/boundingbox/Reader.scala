@@ -1,12 +1,12 @@
 package boundingbox
 
-import java.io.InputStream
+import java.io.BufferedReader
 
 import akka.NotUsed
 import akka.stream.scaladsl.Source
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.io.{Source => ioSource}
 
 object Reader {
     def readLine(line: String, row: Int): Seq[Point] = {
@@ -20,10 +20,10 @@ object Reader {
         }
     }
 
-    def source(in: InputStream): Source[Point, NotUsed] = {
+    def source(in: BufferedReader): Source[Point, NotUsed] = {
         val points = mutable.Queue.empty[Point]
         var line   = 1
-        Source.unfold[Iterator[String], Point](ioSource.fromInputStream(in).getLines()) { lines =>
+        Source.unfold[Iterator[String], Point](in.lines().iterator.asScala) { lines =>
             if (points.isEmpty) {
                 if (!lines.hasNext)
                     None
